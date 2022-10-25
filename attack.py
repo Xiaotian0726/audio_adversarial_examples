@@ -76,10 +76,8 @@ class Attack:
         self.max_audio_len = max_audio_len
         self.mp3 = mp3
 
-        # Create all the variables necessary
-        # they are prefixed with qq_ just so that we know which
-        # ones are ours so when we restore the session we don't
-        # clobber them.
+        # Create all the variables necessary.
+        # They are prefixed with qq_ just so that we know which ones are ours so when we restore the session we don't clobber them.
         self.delta = delta = tf.Variable(np.zeros((batch_size, max_audio_len), dtype=np.float32), name='qq_delta')
         self.mask = mask = tf.Variable(np.zeros((batch_size, max_audio_len), dtype=np.float32), name='qq_mask')
         self.cwmask = cwmask = tf.Variable(np.zeros((batch_size, phrase_length), dtype=np.float32), name='qq_cwmask')
@@ -88,28 +86,24 @@ class Attack:
         self.importance = tf.Variable(np.zeros((batch_size, phrase_length), dtype=np.float32), name='qq_importance')
         self.target_phrase = tf.Variable(np.zeros((batch_size, phrase_length), dtype=np.int32), name='qq_phrase')
         self.target_phrase_lengths = tf.Variable(np.zeros((batch_size), dtype=np.int32), name='qq_phrase_lengths')
-        self.rescale = tf.Variable(np.zeros((batch_size,1), dtype=np.float32), name='qq_phrase_lengths')
+        self.rescale = tf.Variable(np.zeros((batch_size, 1), dtype=np.float32), name='qq_phrase_lengths')
 
         # Initially we bound the l_infty norm by 2000, increase this
         # constant if it's not big enough of a distortion for your dataset.
-        self.apply_delta = tf.clip_by_value(delta, -2000, 2000)*self.rescale
+        self.apply_delta = tf.clip_by_value(delta, -2000, 2000) * self.rescale
 
-        # We set the new input to the model to be the abve delta
-        # plus a mask, which allows us to enforce that certain
-        # values remain constant 0 for length padding sequences.
-        self.new_input = new_input = self.apply_delta*mask + original
+        # We set the new input to the model to be the abve delta plus a mask, 
+        # which allows us to enforce that certain values remain constant 0 for length padding sequences.
+        self.new_input = new_input = self.apply_delta * mask + original
 
-        # We add a tiny bit of noise to help make sure that we can
-        # clip our values to 16-bit integers and not break things.
-        noise = tf.random_normal(new_input.shape,
-                                 stddev=2)
+        # We add a tiny bit of noise to help make sure that we can clip our values to 16-bit integers and not break things.
+        noise = tf.random_normal(new_input.shape, stddev=2)
         pass_in = tf.clip_by_value(new_input+noise, -2**15, 2**15-1)
 
         # Feed this final value to get the logits.
         self.logits = logits = get_logits(pass_in, lengths)
 
-        # And finally restore the graph to make the classifier
-        # actually do something interesting.
+        # And finally restore the graph to make the classifier actually do something interesting.
         saver = tf.train.Saver([x for x in tf.global_variables() if 'qq' not in x.name])
         saver.restore(sess, restore_path)
     
@@ -119,17 +113,17 @@ class Attack:
             target = ctc_label_dense_to_sparse(self.target_phrase, self.target_phrase_lengths)
             
             ctcloss = tf.nn.ctc_loss(labels=tf.cast(target, tf.int32),
-                                     inputs=logits, sequence_length=lengths)
+                                     inputs=logits,
+                                     sequence_length=lengths)
 
             # Slight hack: an infinite l2 penalty means that we don't penalize l2 distortion
             # The code runs faster at a slight cost of distortion, and also leaves one less
             # paramaeter that requires tuning.
             if not np.isinf(l2penalty):
-                loss = tf.reduce_mean((self.new_input-self.original)**2,axis=1) + l2penalty*ctcloss
+                loss = tf.reduce_mean((self.new_input-self.original)**2,axis=1) + l2penalty * ctcloss
             else:
                 loss = ctcloss
             self.expanded_loss = tf.constant(0)
-            
         elif loss_fn == "CW":
             raise NotImplemented("The current version of this project does not include the CW loss function implementation.")
         else:
@@ -142,8 +136,8 @@ class Attack:
         start_vars = set(x.name for x in tf.global_variables())
         optimizer = tf.train.AdamOptimizer(learning_rate)
 
-        grad,var = optimizer.compute_gradients(self.loss, [delta])[0]
-        self.train = optimizer.apply_gradients([(tf.sign(grad),var)])
+        grad, var = optimizer.compute_gradients(self.loss, [delta])[0]
+        self.train = optimizer.apply_gradients([(tf.sign(grad), var)])
         
         end_vars = tf.global_variables()
         new_vars = [x for x in end_vars if x.name not in start_vars]
@@ -162,41 +156,48 @@ class Attack:
         print("Initialization done.\n")
 
 
-    def attack(self, audio, lengths, target, toks, finetune=None):
+    def attack(self, audio, lengths, targets, toks, finetune=None):
         print("Start attack..\n")
         sess = self.sess
 
         # Initialize all of the variables
         sess.run(tf.variables_initializer([self.delta]))
         sess.run(self.original.assign(np.array(audio)))
-        sess.run(self.lengths.assign((np.array(lengths)-(2*Config.audio_step_samples/3))//320))
+
+        # The input waveform is converted into 50 frames per second of audio.
+        # In one second, 16000 / 320 = 50 (frames)
+
+        print('Config.audio_step_samples:', Config.audio_step_samples)
+        sess.run(self.lengths.assign((np.array(lengths) - (2*Config.audio_step_samples/3)) // 320))  # 这里减掉 “2*Config.audio_step_samples/3” 是为了跳过音频文件头吗？
         sess.run(self.mask.assign(np.array([[1 if i < l else 0 for i in range(self.max_audio_len)] for l in lengths])))
-        sess.run(self.cwmask.assign(np.array([[1 if i < l else 0 for i in range(self.phrase_length)] for l in (np.array(lengths)-1)//320])))
-        sess.run(self.target_phrase_lengths.assign(np.array([len(x) for x in target])))
-        sess.run(self.target_phrase.assign(np.array([list(t)+[0]*(self.phrase_length-len(t)) for t in target])))
-        c = np.ones((self.batch_size, self.phrase_length))
+        sess.run(self.cwmask.assign(np.array([[1 if i < l else 0 for i in range(self.phrase_length)] for l in (np.array(lengths)-1) // 320])))
+        sess.run(self.target_phrase_lengths.assign(np.array([len(t) for t in targets])))
+
+        # Padding [0, 0, ...] at the end of all target_phrase for alignment.
+        sess.run(self.target_phrase.assign(np.array([list(t)+[0]*(self.phrase_length-len(t)) for t in targets])))
+        c = np.ones((self.batch_size, self.phrase_length))  # Variable "c" is used in: minimize $dB_x(\delta) + c * loss(x + \delta, target)$
         sess.run(self.importance.assign(c))
-        sess.run(self.rescale.assign(np.ones((self.batch_size,1))))
+        sess.run(self.rescale.assign(np.ones((self.batch_size, 1))))
 
         # Here we'll keep track of the best solution we've found so far
-        final_deltas = [None]*self.batch_size
+        final_deltas = [None] * self.batch_size
 
         if finetune is not None and len(finetune) > 0:
-            sess.run(self.delta.assign(finetune-audio))
+            sess.run(self.delta.assign(finetune - audio))
         
         # We'll make a bunch of iterations of gradient descent here
-        #now = time.time()
+        # now = time.time()
         MAX = self.num_iterations
         first_hits = np.zeros((self.batch_size,))
         best_hits = np.zeros((self.batch_size,))
         for i in range(MAX):
             # Print out some debug information every 10 iterations.
-            if i%10 == 0:
+            if i % 10 == 0:
                 new, delta, probs_out, r_logits = sess.run((self.new_input, self.delta, self.probs, self.logits))
 
                 lst = [(probs_out, r_logits)]
                 if self.mp3:
-                    # TODO: Implement mp3 support 
+                    # TODO: Implement mp3 support
                     raise NotImplemented("The current version does not support mp3 conversion.")
                     mp3ed = convert_mp3(new, lengths)
                     mp3_probs, mp3_logits = sess.run((self.probs, self.logits),
@@ -213,16 +214,16 @@ class Attack:
                         if batch_size == 1:
                             probs = probs_out
                         else:
-                            probs = probs_out[:,ii,:]
+                            probs = probs_out[:, ii, :]
                         decoded = ctc_beam_search_decoder(probs, Config.alphabet, FLAGS.beam_width,
-                                                        scorer=self.scorer, cutoff_prob=FLAGS.cutoff_prob,
-                                                        cutoff_top_n=FLAGS.cutoff_top_n)
+                                                          scorer=self.scorer, cutoff_prob=FLAGS.cutoff_prob,
+                                                          cutoff_top_n=FLAGS.cutoff_top_n)
                         # Here we print the strings that are recognized.
                         print(decoded[0][1])
                         out_list.append(decoded)
                     # And here we print the argmax of the alignment.
-                    res2 = np.argmax(logits,axis=2).T
-                    res2 = ["".join(toks[int(x)] for x in y[:(l-int(2*Config.audio_step_samples/3))//320]) for y,l in zip(res2,lengths)]
+                    res2 = np.argmax(logits, axis=2).T
+                    res2 = ["".join(toks[int(x)] for x in y[:(l-int(2*Config.audio_step_samples/3))//320]) for y, l in zip(res2, lengths)]
                     print("\n".join(res2))
 
 
@@ -234,22 +235,20 @@ class Attack:
                 feed_dict = {}
                 
             # Actually do the optimization step
-            d, el, cl, l, logits, new_input, _ = sess.run((self.delta, self.expanded_loss,
+            d, el, cl, l, logits, new_input, _ = sess.run((self.delta, self.expanded_loss, 
                                                            self.ctcloss, self.loss,
                                                            self.logits, self.new_input,
                                                            self.train),
                                                           feed_dict)
                     
             # Report progress
-            print("%.3f"%np.mean(cl), "\t", "\t".join("%.3f"%x for x in cl))
+            print("%.3f" % np.mean(cl), "\t", "\t".join("%.3f" % x for x in cl))
 
-            logits = np.argmax(logits,axis=2).T
+            logits = np.argmax(logits, axis=2).T
             for ii in range(self.batch_size):
-                # Every 100 iterations, check if we've succeeded
-                # if we have (or if it's the final epoch) then we
-                # should record our progress and decrease the
-                # rescale constant.
-                if (self.loss_fn == "CTC" and i%10 == 0 and out_list[ii][0][1] == "".join([toks[x] for x in target[ii]])) \
+                # Every 100 iterations, check if we've succeeded.
+                # If we have (or if it's the final epoch), then we should record our progress and decrease the rescale constant.
+                if (self.loss_fn == "CTC" and i % 10 == 0 and out_list[ii][0][1] == "".join([toks[x] for x in targets[ii]])) \
                    or (i == MAX-1 and final_deltas[ii] is None):
                     # Get the current constant
                     rescale = sess.run(self.rescale)
@@ -269,7 +268,7 @@ class Attack:
                     # Adjust the best solution found so far
                     final_deltas[ii] = new_input[ii]
 
-                    print("Worked i=%d ctcloss=%f bound=%f"%(ii, cl[ii], 2000*rescale[ii][0]))
+                    print("Worked iteration=%d ctcloss=%f bound=%f" % (ii, cl[ii], 2000*rescale[ii][0]))
                     
                     if (first_hits[ii] == 0):
                         print("First hit for audio {} at iteration {}".format(ii, i))
@@ -281,11 +280,16 @@ class Attack:
 
                     # Just for debugging, save the adversarial example
                     # to /tmp so we can see it if we want
-                    wav.write("tmp/adv.wav", 16000,
-                              np.array(np.clip(np.round(new_input[ii]),
-                                               -2**15, 2**15-1),dtype=np.int16))
+                    wav.write(
+                        filename="tmp/adv.wav", 
+                        rate=16000,
+                        data=np.array(
+                            np.clip(np.round(new_input[ii]), -2**15, 2**15-1),
+                            dtype=np.int16
+                        )
+                    )
         
-        return final_deltas, first_hits, best_hits  
+        return final_deltas, first_hits, best_hits
     
 
 def main(_):
@@ -321,9 +325,12 @@ def main(_):
             names.append(FLAGS.input[i])
             assert fs == 16000
             assert audio.dtype == np.int16
+
+            print('audio.shape before np.squeeze(audio[:,1]):', audio.shape)
             if (audio.shape[-1] == 2):
                 audio = np.squeeze(audio[:,1])
-                print(audio.shape)
+                print('audio.shape after np.squeeze(audio[:,1]):', audio.shape)
+
             source_dB = 20 * np.log10(np.max(np.abs(audio)))
             print('source dB', source_dB)
             source_dBs.append(source_dB)
@@ -333,12 +340,14 @@ def main(_):
             if FLAGS.finetune is not None:
                 finetune.append(list(wav.read(FLAGS.finetune[i])[1]))   
             
-        maxlen = max(map(len,audios))
+        maxlen = max(map(len, audios))
+
+        # Padding [0, 0, ...] at the end of all audios and finetunes for alignment.
         audios = np.array([x+[0]*(maxlen-len(x)) for x in audios])
         finetune = np.array([x+[0]*(maxlen-len(x)) for x in finetune])
         
-        phrase = FLAGS.target 
-        print("\nAttack phrase: ", phrase) 
+        phrase = FLAGS.target
+        print("\nAttack phrase:", phrase)
         
         attack = Attack(sess, 'CTC', len(phrase), maxlen,
                         batch_size=len(audios),
@@ -350,10 +359,10 @@ def main(_):
 
         start_time = time.time() 
         deltas, first_hits, best_hits = attack.attack(audios,
-                               lengths,
-                               [[toks.index(x) for x in phrase]]*len(audios),
-                               toks,
-                               finetune)
+                                                      lengths,
+                                                      [[toks.index(x) for x in phrase]]*len(audios),
+                                                      toks,
+                                                      finetune)
         runtime = time.time() - start_time
 
         print("Finished in {}s.".format(runtime))
@@ -367,10 +376,11 @@ def main(_):
                 if FLAGS.output is not None:
                     path = FLAGS.output[i]
                 else:
-                    path = FLAGS.outprefix+str(i)+".wav"
+                    path = FLAGS.outprefix + str(i) + ".wav"
                 wav.write(path, 16000,
                           np.array(np.clip(np.round(deltas[i][:lengths[i]]),
-                                           -2**15, 2**15-1),dtype=np.int16))
+                                           -2**15, 2**15-1),
+                                           dtype=np.int16))
                 
                 # Define metrics for evaluation
                 diff = deltas[i][:lengths[i]]-audios[i][:lengths[i]]
@@ -380,7 +390,7 @@ def main(_):
                 high_pertub_bounds.append(high_pertub_bound)
                 low_pertub_bounds.append(low_pertub_bound)
                 distortions.append(distortion)
-                print("Final noise loudness: ", distortion)
+                print("Final noise loudness:", distortion)
 
     # Create data_dict to store values for csv file
     data_dict = {
@@ -393,10 +403,10 @@ def main(_):
         'low_pertubation_bound' : low_pertub_bounds,
         'first_hit' : first_hits,
         'best_hit' : best_hits
-    }     
+    }
     df = pd.DataFrame(data_dict, columns=['filename', 'length', 'attack_runtime', 'source_dB', 'noise_loudness', 'high_pertubation_bound', 'low_pertubation_bound', 'first_hit', 'best_hit'])
     csv_filename = "tmp/attack-{}.csv".format(FLAGS.lang, time.strftime("%Y%m%d-%H%M%S"))    
-    df.to_csv(csv_filename, index=False, header=True)   
+    df.to_csv(csv_filename, index=False, header=True)
  
                 
 def run_script():

@@ -34,9 +34,9 @@ sudo systemctl enable --now docker
 Instructions for other platforms:
 https://docs.docker.com/install/
 
-2. Build the docker image (Make sure that you have gpu support, if not the image won't run)
+2. Install nvidia-docker, then build the docker image (Make sure that you have gpu support, if not the image won't run)
 ```
-docker build -t aae_deepspeech_093_gpu .
+nvidia-docker build -t aae_deepspeech_093_gpu .
 ```
 ### With Nvidia-GPU support:
 3. Install the NVIDIA Container Toolkit.
@@ -56,14 +56,14 @@ https://github.com/NVIDIA/nvidia-docker
 
 4. Run the image. Please specify the absolute path to your data and tmp folder (create one if you don't have). The data folder should contain all your audio data. The tmp folder is used to store your results.
 ```
-docker run --gpus all \
+nvidia-docker run \
 -v /absolute/path/to/data:/data \
 -v /absolute/path/to/tmp:/tmp \
 -ti aae_deepspeech_093_gpu
 ```
 If you have no data and just want to test if it works, run
 ```
-docker run --gpus all -ti aae_deepspeech_093_gpu
+nvidia-docker run -ti aae_deepspeech_093_gpu
 ```
 
 5. Check that you can classify normal audio correctly:
@@ -81,7 +81,7 @@ python3 attack.py \
         --input sample-000000.wav \
         --outprefix adv \
         --target "this is a test" \
-        --iterations 1000 \
+        --iterations 150 \
         --restore_path deepspeech-0.9.3-checkpoint/best_dev-1466475 \
         --scorer_path deepspeech-0.9.3-models.scorer \
         --alphabet_config_path DeepSpeech/data/alphabet.txt \

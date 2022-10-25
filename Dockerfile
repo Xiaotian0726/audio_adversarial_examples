@@ -43,8 +43,20 @@ ENV LC_ALL=en_US.UTF-8
 RUN update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
-ENV PYTHON_BIN_PATH /usr/bin/python3.6
-ENV PYTHON_LIB_PATH /usr/local/lib/python3.6/dist-packages
+############ Get scipy installing error when using python3.6, so use python3.7 ############
+## Python package management and basic dependencies
+RUN apt-get install -y curl python3.7 python3.7-dev python3.7-distutils
+## Register the version in alternatives
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.7 1
+## Set python3 as the default python
+RUN update-alternatives --set python /usr/bin/python3.7
+## Upgrade pip to latest version
+RUN curl -s https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
+    python get-pip.py --force-reinstall && \
+    rm get-pip.py
+## Set envs
+ENV PYTHON_BIN_PATH /usr/bin/python3.7
+ENV PYTHON_LIB_PATH /usr/local/lib/python3.7/dist-packages
 
 WORKDIR /
 

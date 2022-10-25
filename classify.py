@@ -84,7 +84,7 @@ def classify():
         data_dict = {'name': [FLAGS.input], 'transcript': [decoded[0][1]]}
         df = pd.DataFrame(data_dict, columns=['name', 'transcript'])
         csv_filename = "tmp/classify-{}.csv".format(time.strftime("%Y%m%d-%H%M%S"))    
-        df.to_csv(csv_filename, index=False, header=True)   
+        df.to_csv(csv_filename, index=False, header=True)
 
 def main(_):
     initialize_globals()

@@ -1,0 +1,9 @@
+venv
+__pycache__
+tmp
+
+deepspeech-0.9.3-checkpoint
+deepspeech-0.9.3-checkpoint.tar.gz
+deepspeech-0.9.3-models.scorer
+
+adv*.wav
