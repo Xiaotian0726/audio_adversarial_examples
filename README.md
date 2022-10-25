@@ -66,32 +66,12 @@ If you have no data and just want to test if it works, run
 nvidia-docker run -ti aae_deepspeech_093_gpu
 ```
 
-5. Check that you can classify normal audio correctly:
+5. Generate an adversarial example:
 ```
-python3 classify.py \
-        --input sample-000000.wav \
-        --restore_path deepspeech-0.9.3-checkpoint/best_dev-1466475 \
-        --scorer_path deepspeech-0.9.3-models.scorer \
-        --alphabet_config_path DeepSpeech/data/alphabet.txt \
+bash scripts/attack.sh
 ```
 
-6. Generate an adversarial example:
+6. Verify that the attack succeeded:
 ```
-python3 attack.py \
-        --input sample-000000.wav \
-        --outprefix adv \
-        --target "this is a test" \
-        --iterations 150 \
-        --restore_path deepspeech-0.9.3-checkpoint/best_dev-1466475 \
-        --scorer_path deepspeech-0.9.3-models.scorer \
-        --alphabet_config_path DeepSpeech/data/alphabet.txt \
-```
-
-7. Verify that the attack succeeded:
-```
-python3 classify.py \
-        --input adv0.wav \
-        --restore_path deepspeech-0.9.3-checkpoint/best_dev-1466475 \
-        --scorer_path deepspeech-0.9.3-models.scorer \
-        --alphabet_config_path DeepSpeech/data/alphabet.txt \
+bash scripts/classify.sh
 ```
