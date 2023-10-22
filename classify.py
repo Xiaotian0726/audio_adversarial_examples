@@ -37,10 +37,10 @@ def classify():
             raw = pydub.AudioSegment.from_mp3(FLAGS.input)
             audio = np.array([struct.unpack("<h", raw.raw_data[i:i+2])[0] for i in range(0,len(raw.raw_data),2)])
         elif FLAGS.input.split(".")[-1] == 'wav':
-            _, audio = wav.read(FLAGS.input)
-            # for audios with 2 channels, take 2nd channel
+            sample_rate, audio = wav.read(FLAGS.input)
+            # For audios with 2 channels, take 2nd channel. (But why?)
             if (audio.shape[-1] == 2):
-                audio = np.squeeze(audio[:,1])
+                audio = np.squeeze(audio[:, 1])
                 print(audio.shape)
         else:
             raise Exception("Unknown file format")
@@ -60,7 +60,7 @@ def classify():
         probs = tf.nn.softmax(logits, name='logits')
         probs = tf.squeeze(probs)
         
-        # length was previously (N-1)//320 
+        # length was previously (N-1) // 320 
         length = (N-(2*Config.audio_step_samples/3))//320
         r = sess.run(probs, {new_input: [audio],
                                lengths: [length]})
@@ -74,17 +74,18 @@ def classify():
                                           scorer=scorer, cutoff_prob=FLAGS.cutoff_prob,
                                           cutoff_top_n=FLAGS.cutoff_top_n)
         
-        print("-"*80)
-        print("-"*80)
+        print("-" * 80)
+        print("-" * 80)
         print("Classification:")
         print(decoded[0][1])
-        print("-"*80)
-        print("-"*80)
+        print("-" * 80)
+        print("-" * 80)
         
         data_dict = {'name': [FLAGS.input], 'transcript': [decoded[0][1]]}
         df = pd.DataFrame(data_dict, columns=['name', 'transcript'])
         csv_filename = "tmp/classify-{}.csv".format(time.strftime("%Y%m%d-%H%M%S"))    
         df.to_csv(csv_filename, index=False, header=True)
+
 
 def main(_):
     initialize_globals()

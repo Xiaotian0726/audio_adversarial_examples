@@ -149,8 +149,12 @@ class Attack:
         
         # Initialize scorer for CTC decoder
         if FLAGS.scorer_path:
-            self.scorer = Scorer(FLAGS.lm_alpha, FLAGS.lm_beta,
-                            FLAGS.scorer_path, Config.alphabet)
+            self.scorer = Scorer(
+                FLAGS.lm_alpha,
+                FLAGS.lm_beta,
+                FLAGS.scorer_path,
+                Config.alphabet
+            )
         else:
             self.scorer = None
         print("Initialization done.\n")
